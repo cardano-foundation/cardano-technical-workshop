@@ -1,7 +1,7 @@
 # Cardano Transaction Workbench
 
-[![Tests](https://github.com/linconvidal/cardano-technical-workshop/actions/workflows/validation.yml/badge.svg?branch=main)](https://github.com/linconvidal/cardano-technical-workshop/actions/workflows/validation.yml)
-[![Deploy](https://github.com/linconvidal/cardano-technical-workshop/actions/workflows/vercel.yml/badge.svg?branch=main)](https://github.com/linconvidal/cardano-technical-workshop/actions/workflows/vercel.yml)
+[![Tests](https://github.com/cardano-foundation/cardano-technical-workshop/actions/workflows/validation.yml/badge.svg?branch=main)](https://github.com/cardano-foundation/cardano-technical-workshop/actions/workflows/validation.yml)
+[![Deploy](https://github.com/cardano-foundation/cardano-technical-workshop/actions/workflows/vercel.yml/badge.svg?branch=main)](https://github.com/cardano-foundation/cardano-technical-workshop/actions/workflows/vercel.yml)
 
 [Versão em português](README.md)
 
@@ -22,7 +22,7 @@ In the Workbench, choose **API key**, enter your Blockfrost key, and connect you
 Requires Node.js 20.19 or newer.
 
 ```bash
-git clone https://github.com/linconvidal/cardano-technical-workshop.git
+git clone https://github.com/cardano-foundation/cardano-technical-workshop.git
 cd cardano-technical-workshop
 npm ci
 cp .env.example .env
