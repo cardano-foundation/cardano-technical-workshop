@@ -1,0 +1,144 @@
+import { Client, Transaction, TransactionHash } from "@evolution-sdk/evolution"
+
+import { WORKSHOP_NETWORK_CONFIG } from "./network-config.js"
+
+export type BlockfrostReadiness = {
+  configured: boolean
+  reachable: boolean
+  healthy: boolean
+}
+
+export type AddressReadiness = {
+  funded: boolean
+  utxoCount: number
+}
+
+export type TransactionInclusion =
+  | { status: "not-indexed" }
+  | {
+      status: "included"
+      block: string
+      blockHeight: number
+      blockTime: number
+    }
+
+export class BlockfrostHttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly responseText: string,
+  ) {
+    super(`Blockfrost returned HTTP ${status}${responseText ? `: ${responseText}` : ""}`)
+    this.name = "BlockfrostHttpError"
+  }
+}
+
+const environmentProjectId = (): string | undefined =>
+  typeof process === "undefined" ? undefined : process.env.BLOCKFROST_PROJECT_ID?.trim()
+
+const loadBlockfrostProjectId = (projectId = environmentProjectId()): string => {
+  if (projectId) return projectId
+
+  throw new Error("Set BLOCKFROST_PROJECT_ID")
+}
+
+export const makeWorkshopBlockfrostClient = (projectId?: string) => Client
+  .make(WORKSHOP_NETWORK_CONFIG.evolutionNetwork)
+  .withBlockfrost({
+    baseUrl: WORKSHOP_NETWORK_CONFIG.blockfrostBaseUrl,
+    projectId: loadBlockfrostProjectId(projectId),
+  })
+
+export const getBlockfrostReadiness = async (
+  fetchImpl: typeof fetch = fetch,
+  projectId = environmentProjectId(),
+): Promise<BlockfrostReadiness> => {
+  if (!projectId) return { configured: false, reachable: false, healthy: false }
+
+  try {
+    const response = await blockfrostFetch("/health", projectId, fetchImpl)
+    if (!response.ok) return { configured: true, reachable: true, healthy: false }
+
+    const payload = await response.json() as { is_healthy?: unknown }
+    return {
+      configured: true,
+      reachable: true,
+      healthy: payload.is_healthy === true,
+    }
+  } catch {
+    return { configured: true, reachable: false, healthy: false }
+  }
+}
+
+export const getAddressReadiness = async (
+  address: string,
+  fetchImpl: typeof fetch = fetch,
+  projectId?: string,
+): Promise<AddressReadiness> => {
+  const response = await blockfrostFetch(
+    `/addresses/${encodeURIComponent(address)}/utxos?count=100`,
+    loadBlockfrostProjectId(projectId),
+    fetchImpl,
+  )
+
+  if (response.status === 404) return { funded: false, utxoCount: 0 }
+  await requireOk(response)
+
+  const utxos = await response.json()
+  if (!Array.isArray(utxos)) throw new Error("Unexpected Blockfrost address response")
+  return { funded: utxos.length > 0, utxoCount: utxos.length }
+}
+
+export const getTransactionInclusion = async (
+  txHash: string,
+  fetchImpl: typeof fetch = fetch,
+  projectId?: string,
+): Promise<TransactionInclusion> => {
+  const response = await blockfrostFetch(
+    `/txs/${encodeURIComponent(txHash)}`,
+    loadBlockfrostProjectId(projectId),
+    fetchImpl,
+  )
+
+  if (response.status === 404) return { status: "not-indexed" }
+  await requireOk(response)
+
+  const payload = await response.json() as {
+    block?: unknown
+    block_height?: unknown
+    block_time?: unknown
+  }
+  if (
+    typeof payload.block !== "string" ||
+    typeof payload.block_height !== "number" ||
+    typeof payload.block_time !== "number"
+  ) {
+    throw new Error("Unexpected Blockfrost transaction response")
+  }
+
+  return {
+    status: "included",
+    block: payload.block,
+    blockHeight: payload.block_height,
+    blockTime: payload.block_time,
+  }
+}
+
+export const submitTransaction = async (signedTxCbor: string, projectId?: string) => {
+  const provider = makeWorkshopBlockfrostClient(projectId)
+  const txHash = await provider.submitTx(Transaction.fromCBORHex(signedTxCbor))
+  return { txHash: TransactionHash.toHex(txHash) }
+}
+
+const blockfrostFetch = (
+  path: string,
+  projectId: string,
+  fetchImpl: typeof fetch,
+): Promise<Response> => fetchImpl(`${WORKSHOP_NETWORK_CONFIG.blockfrostBaseUrl}${path}`, {
+  headers: { project_id: projectId },
+  signal: AbortSignal.timeout(15_000),
+})
+
+const requireOk = async (response: Response): Promise<void> => {
+  if (response.ok) return
+  throw new BlockfrostHttpError(response.status, await response.text())
+}
